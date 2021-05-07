@@ -1,0 +1,14 @@
+% latex table generated in R 4.0.2 by xtable 1.8-4 package
+% Thu May 06 16:22:01 2021
+\begin{table}[ht]
+\centering
+\begin{tabular}{rrrrrrr}
+  \hline
+ & lm & naive\_se & hw\_se & post\_mean & post\_se & bayes\_hw\_se \\ 
+  \hline
+(Intercept) & 94.067 & 2.350 & 1.781 & 93.481 & 2.307 & 1.767 \\ 
+  MALE & 4.817 & 2.063 & 2.032 & 5.005 & 2.062 & 2.050 \\ 
+  RIDAGEYR & 0.570 & 0.046 & 0.042 & 0.580 & 0.046 & 0.042 \\ 
+   \hline
+\end{tabular}
+\end{table}
