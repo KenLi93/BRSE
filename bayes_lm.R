@@ -1,0 +1,91 @@
+#!/bin/Rscript
+## sandwich covariance matrix of $\mu_1, \mu_2$
+library("sandwich")
+library(R2jags)
+library(parallel)
+set.seed(4)
+NSIM <- 1000
+param_grid <- expand.grid(n = seq(5, 50, 5),
+                          a2 = c(-2, 2),
+                          credint_coverage = NA,
+                          credint_avelen = NA,
+                          rci_coverage = NA,
+                          rci_avelen = NA,
+                          brci_coverage = NA,
+                          brci_avelen = NA)
+
+for(ii in 1:nrow(param_grid)){
+  
+  n <- param_grid[ii, "n"]
+  a2 <- param_grid[ii, "a2"]
+  
+  ## read current parameters
+  xx <- seq(0, 3, length.out = 100000)
+  yy <- xx + a2 * xx ^ 2
+  
+  beta0 <- lm(yy ~ xx)$coefficients[2]
+  sim_res <- replicate(NSIM, {
+    ## generate the data of two samples
+    ## x denote the design matrix
+    x <- runif(n, 0, 3)
+    y <- rnorm(n, mean = x + a2 * x ^ 2, sd = 1)
+    
+    
+    lmmod <- lm(y ~ x)
+    mle <- coef(lmmod)[2]
+    
+    hw_se <- sqrt(vcovHC(lmmod, "HC0")[2, 2])
+    
+    rci <- mle + qnorm(c(0.025, 0.975)) * hw_se
+    jags_model <- textConnection("model{ 
+for (i in 1:n) {
+  y[i] ~ dnorm(mu[i], invsigma2)
+  mu[i] = x[i, ] %*% beta[] 
+
+}
+
+for (j in 1:2) {
+  beta[j] ~ dnorm(0, 0.001)
+}
+	invsigma2 ~ dgamma(0.1, 0.1)
+} 
+")
+    # design matrix
+    X <- cbind(1, x)
+    
+    
+    lm_model <- jags.model(file = jags_model, 
+                           data = list(y = y, x = X, n = n),
+                           n.chains = 1, n.adapt = 1000)
+    
+    beta_samples <- as.matrix(coda.samples(lm_model, c('beta', 'invsigma2'), n.iter = 10000)[[1]])
+    
+    post_mean <- mean(beta_samples[, 2])
+    pos_var_beta <- cov(beta_samples)[1:2, 1:2]
+    credint <- quantile(beta_samples[, 2], c(0.025, 0.975))
+    
+    Omega <- array(dim = c(2, 2, nrow(beta_samples)))
+    for (i in 1:dim(Omega)[3]) {
+      Omega[, , i] <- t(X) %*% diag(as.numeric((y - X %*% beta_samples[i, 1:2]) ^ 2)) %*% X %*%
+        solve(t(X) %*% X) * beta_samples[i, 3]
+    }
+    
+    Omega <- apply(Omega, c(1, 2), mean)
+    
+    ## the "bayesian" version of sandwich covariance matrix
+    post_se <- sqrt(pos_var_beta[2, 2])
+    bayes_hw_se <- sqrt((pos_var_beta %*% Omega)[2, 2])
+    brci <- post_mean + qnorm(c(0.025, 0.975)) * bayes_hw_se
+    c(credint_cover = as.numeric(credint[1] < 0 & credint[2] > 0),
+      credint_len = credint[2] - credint[1],
+      rci_cover = as.numeric(rci[1] < 0 & rci[2] > 0),
+      rci_len = rci[2] - rci[1],
+      brci_cover = as.numeric(brci[1] < 0 & brci[2] > 0),
+      brci_len = brci[2] - brci[1])
+  }) %>% rowMeans()
+  
+  param_grid[ii, -c(1, 2)] <- sim_res
+  
+}
+
+save(param_grid, file = "bayes_lm_results.RData")
