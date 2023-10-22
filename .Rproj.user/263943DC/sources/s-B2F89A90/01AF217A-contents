@@ -1,0 +1,184 @@
+## Phenotype data for SJLIFE
+rm(list=ls())
+if (as.character(Sys.info()['sysname']) == "Windows"){
+  root = 'Z:/ResearchHome/' # for Windows
+} else {
+  root = '/Volumes/' # for MAC
+}
+setwd(paste0(root, 'Groups/sapkogrp/projects/Cardiotoxicity/common/PRS/'))
+
+## Use phenotype data previously prepared for GWAS
+pheno_sjlife = read.delim('../gwas/pheno/sjlife_all.txt', header = TRUE, sep = "\t")
+dim(pheno_sjlife)
+
+## Get RT data
+library(sas7bdat)
+# Average heart RT
+hrt = read.sas7bdat('/Volumes/data/SJShare/SJCOMMON/ECC/SJLife/SJLIFE Data Freeze/2 Final Data SJLIFE/MDA Dosimetry (Partial)/rtdosimetrysjl_heart_20211112.sas7bdat')
+hrt = hrt[c('sjlid', 'HeartAvg')]
+hrt$HeartAvg[hrt$HeartAvg==999999.0 | hrt$HeartAvg==777777.0] = NA
+pheno_sjlife = merge(pheno_sjlife, hrt, by="sjlid", all.x = TRUE)
+# Maximum chest RT dose
+chest_rt_dose = read.sas7bdat('/Volumes/data/SJShare/SJCOMMON/ECC/SJLife/SJLIFE Data Freeze/2 Final Data SJLIFE/20200430/Clinical Data/radiation_dosimetry.sas7bdat')
+chest_rt_dose = chest_rt_dose[c('sjlid', 'maxchestrtdose')]
+pheno_sjlife = merge(pheno_sjlife, chest_rt_dose, by='sjlid', all.x = TRUE)
+# Chest RT (y/n)
+chest_rt_yn = read.sas7bdat('/Volumes/data/SJShare/SJCOMMON/ECC/SJLife/SJLIFE Data Freeze/2 Final Data SJLIFE/20200430/Clinical Data/radiationsum_yn.sas7bdat')
+chest_rt_yn = chest_rt_yn[c('sjlid', 'potential_chest')]
+pheno_sjlife = merge(pheno_sjlife, chest_rt_yn, by='sjlid', all.x = TRUE)
+# Harmonize rt dose variables based on yn variable
+pheno_sjlife$maxchestrtdose[pheno_sjlife$potential_chest==0 & is.na(pheno_sjlife$maxchestrtdose)] = 0
+pheno_sjlife$HeartAvg[pheno_sjlife$potential_chest==0 & is.na(pheno_sjlife$HeartAvg)] = 0
+
+## PRSs
+# DCM
+DCM = read.table('DCM_studies_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+DCM = DCM[c('IID', 'Pt_1')]
+colnames(DCM)[2] = 'SCORE_DCM'
+DCM_tadros = read.table('DCM_Tadros_Nat_Genet_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+DCM_tadros = DCM_tadros[c('IID', 'Pt_1')]
+colnames(DCM_tadros)[2] = 'SCORE_DCM_tadros'
+# HCM
+HCM_harper = read.table('PGS000739_Harper_Nat_Genet_HCM_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+HCM_harper = HCM_harper[c('IID', 'Pt_1')]
+colnames(HCM_harper)[2] = 'SCORE_HCM_harper'
+HCM_tadros = read.table('PGS000778_Tadros_Nat_Genet_HCM_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+HCM_tadros = HCM_tadros[c('IID', 'Pt_1')]
+colnames(HCM_tadros)[2] = 'SCORE_HCM_tadros'
+# HF
+HF_shah = read.table('Shah_et_al_HF_Nat_Comm_2020_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+HF_shah = HF_shah[c('IID', 'Pt_1')]
+colnames(HF_shah)[2] = 'SCORE_HF_shah'
+HF_armstrong = read.table('PGS000709_Sinnott_Armstrong_Nat_Genet_HF_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+HF_armstrong = HF_armstrong[c('IID', 'Pt_1')]
+colnames(HF_armstrong)[2] = 'SCORE_HF_armstrong'
+HF_wang = read.table('PGS001790_Wang_medRxiv_HF_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+HF_wang = HF_wang[c('IID', 'Pt_1')]
+colnames(HF_wang)[2] = 'SCORE_HF_wang'
+# LVEF
+LVEF_tanigawa = read.table('PGS001412_Tanigawa_PLoS_Genet_LVEF_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVEF_tanigawa = LVEF_tanigawa[c('IID', 'Pt_1')]
+colnames(LVEF_tanigawa)[2] = 'SCORE_LVEF_tanigawa'
+LVEF_pirruccello = read.table('Pirruccello_Nat_Comm_LVEF_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVEF_pirruccello = LVEF_pirruccello[c('IID', 'Pt_1')]
+colnames(LVEF_pirruccello)[2] = 'SCORE_LVEF_pirruccello'
+# LVESV
+LVESV = read.table('Pirruccello_Nat_Comm_LVESV_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVESV = LVESV[c('IID', 'Pt_1')]
+colnames(LVESV)[2] = 'SCORE_LVESV'
+# LVESVi
+LVESVi = read.table('Pirruccello_Nat_Comm_LVESVi_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVESVi = LVESVi[c('IID', 'Pt_1')]
+colnames(LVESVi)[2] = 'SCORE_LVESVi'
+# LVSV
+LVSV_tanigawa = read.table('PGS001413_Tanigawa_PLoS_Genet_LVSV_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVSV_tanigawa = LVSV_tanigawa[c('IID', 'Pt_1')]
+colnames(LVSV_tanigawa)[2] = 'SCORE_LVSV_tanigawa'
+LVSV_pirruccello = read.table('Pirruccello_Nat_Comm_SV_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVSV_pirruccello = LVSV_pirruccello[c('IID', 'Pt_1')]
+colnames(LVSV_pirruccello)[2] = 'SCORE_LVSV_pirruccello'
+# LVSVi
+LVSVi = read.table('Pirruccello_Nat_Comm_SVi_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVSVi = LVSVi[c('IID', 'Pt_1')]
+colnames(LVSVi)[2] = 'SCORE_LVSVi'
+# LVEDV
+LVEDV = read.table('Pirruccello_Nat_Comm_LVEDV_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVEDV = LVEDV[c('IID', 'Pt_1')]
+colnames(LVEDV)[2] = 'SCORE_LVEDV'
+# LVEDVi
+LVEDVi = read.table('Pirruccello_Nat_Comm_LVEDVi_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+LVEDVi = LVEDVi[c('IID', 'Pt_1')]
+colnames(LVEDVi)[2] = 'SCORE_LVEDVi'
+# Hypercholesterolemia
+Hypercholesterolemia = read.table('PGS000936_Tanigawa_PLoS_Genet_Hypercholesterolemia_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+Hypercholesterolemia = Hypercholesterolemia[c('IID', 'Pt_1')]
+colnames(Hypercholesterolemia)[2] = 'SCORE_Hypercholesterolemia'
+# T2D
+T2D_khera = read.table('PGS000014_Khera_Nat_Genet_T2D_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+T2D_khera = T2D_khera[c('IID', 'Pt_1')]
+colnames(T2D_khera)[2] = 'SCORE_T2D_khera'
+T2D_mahajan = read.table('T2D_Mahajan_NG_2022_reported_338_loci_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+T2D_mahajan = T2D_mahajan[c('IID', 'Pt_1')]
+colnames(T2D_mahajan)[2] = 'SCORE_T2D_mahajan'
+# HTN
+htn_sjlife1 = read.table(paste0(root, 'ClusterHome/ysapkota/Work/CCSS_HTN/evangelou_bp_gwas/SJLIFE_1_WGS/SJLIFE_1_WGS_evangelou_bp_SNPs_final_evangelou_bp_895_loci.profile'), header = TRUE)
+htn_sjlife1$FID_IID = paste0(htn_sjlife1$FID,"_",htn_sjlife1$IID)
+htn_sjlife1$FID_IID[htn_sjlife1$FID_IID=="SJALL019097_G1-TB-14-4082"] = "SJWLM019651_G1-TB-14-4086"
+htn_sjlife1$FID_IID[htn_sjlife1$FID_IID=="SJALL041282_G1-TB-09-3703"] = "SJALL041462_G1-TB-09-3737"
+linkfile = read.table(paste0(root, 'ClusterHome/ysapkota/Work/WGS_SJLIFE/Phenotypes/SJLIFEWGS_3006_vcfid_to_sjlid.linkfile_plink'), header=F)
+linkfile$V4 = paste0(linkfile$V1,"_",linkfile$V2)
+htn_sjlife1 = merge(htn_sjlife1, linkfile, by.x="FID_IID",by.y="V4")
+htn_sjlife1$IID = htn_sjlife1$V3
+htn_sjlife1 = htn_sjlife1[c('IID', 'SCORE')]
+colnames(htn_sjlife1) = c('IID','SCORE_HTN')
+htn_sjlife2 = read.table(paste0(root, 'ClusterHome/ysapkota/Work/CCSS_HTN/evangelou_bp_gwas/SJLIFE_2_WGS/SJLIFE_2_WGS_evangelou_bp_SNPs_final_evangelou_bp_all_loci.profile'), header = TRUE)
+htn_sjlife2 = htn_sjlife2[c('IID','SCORE')]
+colnames(htn_sjlife2) = c('IID','SCORE_HTN')
+HTN = rbind(htn_sjlife1, htn_sjlife2)
+# BMI
+bmi_sjlife1 = read.table(paste0(root, 'ClusterHome/ysapkota/Work/WGS_SJLIFE/Analyses/BMI_rare_variants/GPS_Khera_Cell/SJLIFE_1_BMI_GPS_common_variants_final.sscore'), header = FALSE)
+bmi_sjlife1 = bmi_sjlife1[c('V2','V5')]
+linkfile$V5 = linkfile$V4
+linkfile$V5[grep("^36", linkfile$V1)] = linkfile$V1[grep("^36", linkfile$V1)]
+bmi_sjlife1 = merge(linkfile, bmi_sjlife1, by.x='V5',by.y='V2')
+bmi_sjlife1 = bmi_sjlife1[c(4,6)]
+colnames(bmi_sjlife1) = c('IID','SCORE_BMI')
+bmi_sjlife2 = read.table(paste0(root, 'ClusterHome/ysapkota/Work/WGS_SJLIFE/Analyses/BMI_rare_variants/GPS_Khera_Cell/SJLIFE_2_BMI_GPS_common_variants_final.sscore'), header = FALSE)
+bmi_sjlife2 = bmi_sjlife2[c('V2','V5')]
+colnames(bmi_sjlife2) = c('IID','SCORE_BMI')
+BMI = rbind(bmi_sjlife1, bmi_sjlife2)
+# ACT
+ACT = read.table('Cardiomyopathy_survivors_studies_hg38.txt_harmonized_prs_sjlife.all_score', header = TRUE)
+ACT = ACT[c('IID', 'Pt_1')]
+colnames(ACT)[2] = 'SCORE_ACT'
+# # ACT GxE
+# ACT_ge = read.table('Cardiomyopathy_survivors_GE_studies_genotypes_hg38_sjlife.raw', header = TRUE)
+# ACT_ge$FID = ACT_ge$PAT = ACT_ge$MAT = ACT_ge$SEX = ACT_ge$PHENOTYPE = NULL
+
+# Merge all PRS files
+prs_list = list(DCM, DCM_tadros, HCM_harper, HCM_tadros, HF_shah, HF_armstrong, HF_wang, LVEF_tanigawa, LVEF_pirruccello, LVESV, LVESVi, 
+                LVSV_tanigawa, LVSV_pirruccello, LVSVi, LVEDV, LVEDVi, Hypercholesterolemia, T2D_khera, T2D_mahajan, HTN, BMI, ACT)
+all_prs = Reduce(function(x, y) merge(x, y, all=TRUE), prs_list)
+# Change to Z-score
+all_prs = data.frame(IID=all_prs$IID, sapply(all_prs[,2:ncol(all_prs)], scale))
+# Categorization
+cp = c(0, 0.1, 0.9, 1)
+all_prs$SCORE_DCM_cat = cut(all_prs$SCORE_DCM, as.numeric(quantile(all_prs$SCORE_DCM, cp)), include.lowest = TRUE)
+all_prs$SCORE_DCM_tadros_cat = cut(all_prs$SCORE_DCM_tadros, as.numeric(quantile(all_prs$SCORE_DCM_tadros, cp)), include.lowest = TRUE)
+all_prs$SCORE_HCM_harper_cat = cut(all_prs$SCORE_HCM_harper, as.numeric(quantile(all_prs$SCORE_HCM_harper, cp)), include.lowest = TRUE)
+all_prs$SCORE_HCM_tadros_cat = cut(all_prs$SCORE_HCM_tadros, as.numeric(quantile(all_prs$SCORE_HCM_tadros, cp)), include.lowest = TRUE)
+all_prs$SCORE_HF_shah_cat = cut(all_prs$SCORE_HF_shah, as.numeric(quantile(all_prs$SCORE_HF_shah, cp)), include.lowest = TRUE)
+all_prs$SCORE_HF_armstrong_cat = cut(all_prs$SCORE_HF_armstrong, as.numeric(quantile(all_prs$SCORE_HF_armstrong, cp)), include.lowest = TRUE)
+all_prs$SCORE_HF_wang_cat = cut(all_prs$SCORE_HF_wang, as.numeric(quantile(all_prs$SCORE_HF_wang, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVEF_tanigawa_cat = cut(all_prs$SCORE_LVEF_tanigawa, as.numeric(quantile(all_prs$SCORE_LVEF_tanigawa, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVEF_pirruccello_cat = cut(all_prs$SCORE_LVEF_pirruccello, as.numeric(quantile(all_prs$SCORE_LVEF_pirruccello, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVESV_cat = cut(all_prs$SCORE_LVESV, as.numeric(quantile(all_prs$SCORE_LVESV, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVESVi_cat = cut(all_prs$SCORE_LVESVi, as.numeric(quantile(all_prs$SCORE_LVESVi, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVSV_tanigawa_cat = cut(all_prs$SCORE_LVSV_tanigawa, as.numeric(quantile(all_prs$SCORE_LVSV_tanigawa, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVSV_pirruccello_cat = cut(all_prs$SCORE_LVSV_pirruccello, as.numeric(quantile(all_prs$SCORE_LVSV_pirruccello, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVSVi_cat = cut(all_prs$SCORE_LVSVi, as.numeric(quantile(all_prs$SCORE_LVSVi, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVEDV_cat = cut(all_prs$SCORE_LVEDV, as.numeric(quantile(all_prs$SCORE_LVEDV, cp)), include.lowest = TRUE)
+all_prs$SCORE_LVEDVi_cat = cut(all_prs$SCORE_LVEDVi, as.numeric(quantile(all_prs$SCORE_LVEDVi, cp)), include.lowest = TRUE)
+all_prs$SCORE_Hypercholesterolemia_cat = cut(all_prs$SCORE_Hypercholesterolemia, as.numeric(quantile(all_prs$SCORE_Hypercholesterolemia, cp)), include.lowest = TRUE)
+all_prs$SCORE_T2D_khera_cat = cut(all_prs$SCORE_T2D_khera, as.numeric(quantile(all_prs$SCORE_T2D_khera, cp)), include.lowest = TRUE)
+all_prs$SCORE_T2D_mahajan_cat = cut(all_prs$SCORE_T2D_mahajan, as.numeric(quantile(all_prs$SCORE_T2D_mahajan, cp)), include.lowest = TRUE)
+all_prs$SCORE_HTN_cat = cut(all_prs$SCORE_HTN, as.numeric(quantile(all_prs$SCORE_HTN, cp)), include.lowest = TRUE)
+all_prs$SCORE_BMI_cat = cut(all_prs$SCORE_BMI, as.numeric(quantile(all_prs$SCORE_BMI, cp)), include.lowest = TRUE)
+all_prs$SCORE_ACT_cat = cut(all_prs$SCORE_ACT, as.numeric(quantile(all_prs$SCORE_ACT, cp)), include.lowest = TRUE)
+levels(all_prs$SCORE_DCM_cat) = levels(all_prs$SCORE_DCM_tadros_cat) = levels(all_prs$SCORE_HCM_harper_cat) = levels(all_prs$SCORE_HCM_tadros_cat) = levels(all_prs$SCORE_HF_shah_cat) =
+  levels(all_prs$SCORE_HF_armstrong_cat) = levels(all_prs$SCORE_HF_wang_cat) = levels(all_prs$SCORE_LVEF_tanigawa_cat) = levels(all_prs$SCORE_LVEF_pirruccello_cat) =
+  levels(all_prs$SCORE_LVESV_cat) = levels(all_prs$SCORE_LVESVi_cat) = levels(all_prs$SCORE_LVSV_tanigawa_cat) = levels(all_prs$SCORE_LVSV_pirruccello_cat) =
+  levels(all_prs$SCORE_LVSVi_cat) = levels(all_prs$SCORE_LVEDV_cat) = levels(all_prs$SCORE_LVEDVi_cat) = levels(all_prs$SCORE_LVSV_pirruccello_cat) =
+  levels(all_prs$SCORE_Hypercholesterolemia_cat) = levels(all_prs$SCORE_T2D_khera_cat) = levels(all_prs$SCORE_T2D_mahajan_cat) = levels(all_prs$SCORE_HTN_cat) = 
+  levels(all_prs$SCORE_BMI_cat) = levels(all_prs$SCORE_ACT_cat) = c('bottom', 'middle', 'top')
+
+## Merge phenotype and PRS data
+dat = merge(pheno_sjlife, all_prs, by.x = 'sjlid', by.y = 'IID')
+dat$agedx_cat = cut(dat$agedx, c(-1, 5, 10, 15, 100), include.lowest = TRUE)
+dat$agelstcontact_cat = cut(dat$agelstcontact, c(5, 25, 35, 45, 55, 100), include.lowest = TRUE)
+dat$anthra_jco_dose_any_cat = cut(dat$anthra_jco_dose_any, c(-1, 0, 100, 250, 100000), include.lowest = TRUE)
+dat$HeartAvg_cat = cut(dat$HeartAvg, c(-1, 200, 500, 1500, 3500, 100000))
+dat$maxchestrtdose_cat = cut(dat$maxchestrtdose, c(-1, 200, 500, 1500, 3500, 100000))
+
+## Write data to disc for analyses
+write.table(dat, 'SJLIFE_data_cmp.txt', row.names = FALSE, quote = FALSE, sep = '\t')

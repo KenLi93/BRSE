@@ -6,14 +6,8 @@ library(dplyr)
 library(parallel)
 set.seed(4)
 NSIM <- 1000
-param_grid <- expand.grid(n = seq(5, 50, 5),
-                          a2 = c(-2, 0, 2),
-                          credint_coverage = NA,
-                          credint_avelen = NA,
-                          rci_coverage = NA,
-                          rci_avelen = NA,
-                          brci_coverage = NA,
-                          brci_avelen = NA)
+param_grid <- expand.grid(n = seq(5, 200, 5),
+                          a2 = c(-2, 0, 2))
 
 for(ii in 1:nrow(param_grid)){
   
@@ -77,15 +71,19 @@ for (j in 1:2) {
     post_se <- sqrt(pos_var_beta[2, 2])
     bayes_hw_se <- sqrt((pos_var_beta %*% Omega)[2, 2])
     brci <- post_mean + qnorm(c(0.025, 0.975)) * bayes_hw_se
-    c(credint_cover = as.numeric(credint[1] < 0 & credint[2] > 0),
-      credint_len = credint[2] - credint[1],
-      rci_cover = as.numeric(rci[1] < 0 & rci[2] > 0),
-      rci_len = rci[2] - rci[1],
-      brci_cover = as.numeric(brci[1] < 0 & brci[2] > 0),
-      brci_len = brci[2] - brci[1])
-  }) %>% rowMeans()
+    c(est = post_mean,
+      post_se = post_se,
+      brse = as.numeric(bayes_hw_se),
+      credint_cover = as.numeric(credint[1] < beta0 & credint[2] > beta0),
+      credint_len = as.numeric(credint[2] - credint[1]),
+      rci_cover = as.numeric(rci[1] < beta0 & rci[2] > beta0),
+      rci_len = as.numeric(rci[2] - rci[1]),
+      brci_cover = as.numeric(brci[1] < beta0 & brci[2] > beta0),
+      brci_len = as.numeric(brci[2] - brci[1]))
+  }) 
   
-  param_grid[ii, -c(1, 2)] <- sim_res
+  saveRDS(sim_res,
+          file = sprintf("./bayes_fixed_design_results/n_%s_a2_%s.rds", n, a2))
   
 }
 

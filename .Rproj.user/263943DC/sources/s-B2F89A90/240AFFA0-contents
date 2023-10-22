@@ -1,0 +1,359 @@
+## Prediction modeling
+rm(list=ls())
+setwd('/Volumes/Groups/sapkogrp/projects/Cardiotoxicity/common/PRS/')
+# setwd('Z:/ResearchHome/Groups/sapkogrp/projects/Cardiotoxicity/common/PRS/')
+
+## SJLIFE
+sjlife = read.delim('SJLIFE_data_cmp.txt', header = TRUE, sep = "\t")
+# Grade 3 plus
+# sjlife$CMP3plus = sjlife$CMP2plus
+# Make Grade 2s as controls
+# sjlife$CMP3plus[is.na(sjlife$CMP3plus)] = 1
+sjlife = subset(sjlife, !is.na(CMP3plus))
+sjlife$CMP3plus = sjlife$CMP3plus - 1
+sjlife$attained_age = ifelse(sjlife$CMP3plus==1, sjlife$ageevent, ifelse(sjlife$CMP3plus==0, sjlife$agelstcontact, NA))
+
+## To use age at last contact as a predictor, Yutaka suggested to move this variable earlier by 15 years (or 15 or 20 years). Then,
+## survivors who developed CCD within that 10, or 15 or 20 years window will be counted as a case, othersise a control.
+## Similarly all the predictors should be available before that 10, 15 or 20 years window
+# Move everyone's age at last contact by 15 years
+shift = 15
+sjlife$agelstcontact_15 = sjlife$agelstcontact - shift
+sjlife$agelstcontact_15_cat = cut(sjlife$agelstcontact_15, c(-100, 15, 25, 35, 45, 100), include.lowest = TRUE)
+# Survivors who developed CCD between agelstcontact_15 and agelstcontact will have CMP3plus as 1, else 0
+sjlife$CMP3plus_15 = ifelse(sjlife$CMP3plus==1 & sjlife$ageevent > sjlife$agelstcontact_15 & sjlife$ageevent < sjlife$agelstcontact, 1, 
+                            ifelse(sjlife$CMP3plus==0, 0, NA))
+sjlife_all = read.delim('SJLIFE_data_cmp_eligible.txt', header = TRUE, sep = "\t")
+sjlife_all = sjlife_all[c('sjlid', 'grade_dyslipidemia', 'ageevent_dyslipidemia', 'grade_htn', 'ageevent_htn', 'grade_obesity', 'ageevent_obesity', 'grade_t2d', 'ageevent_t2d')]
+sjlife = merge(sjlife, sjlife_all, by='sjlid')
+# CVRFs should then occur before agelstcontact_15
+sjlife$dyslip = ifelse(sjlife$grade_dyslipidemia>1, "Yes", "No")
+sjlife$dyslip[sjlife$grade_dyslipidemia>1 & sjlife$ageevent_dyslipidemia>=sjlife$agelstcontact_15] = "Unk_baseline"
+sjlife$dyslip[is.na(sjlife$dyslip)] = "No"
+sjlife$htn = ifelse(sjlife$grade_htn>1, "Yes", "No")
+sjlife$htn[sjlife$grade_htn>1 & sjlife$ageevent_htn>=sjlife$agelstcontact_15] = "Unk_baseline"
+sjlife$htn[is.na(sjlife$htn)] = "No"
+# sjlife$obesity = ifelse(sjlife$grade_obesity>2, "Yes", ifelse(sjlife$grade_obesity==1 | sjlife$grade_obesity==2, "Pre", "No"))
+# sjlife$obesity[sjlife$grade_obesity>2 & sjlife$ageevent_obesity>=sjlife$agelstcontact_15] = "No"
+# sjlife$obesity[is.na(sjlife$obesity)] = "Missing"
+sjlife$t2d = ifelse(sjlife$grade_t2d>1, "Yes", "No")
+sjlife$t2d[sjlife$grade_t2d>1 & sjlife$ageevent_t2d>=sjlife$agelstcontact_15] = "Unk_baseline"
+sjlife$t2d[is.na(sjlife$t2d)] = "No"
+# Subset data
+sjlife_trimmed = sjlife[c('sjlid', 'CMP3plus_15', 'agedx', 'agedx_cat', 'gender', 'agelstcontact', 'agelstcontact_15', 'agelstcontact_15_cat', 'anthra_jco_dose_any', 'anthra_jco_dose_any_cat',
+                          'HeartAvg', 'HeartAvg_cat', 'maxchestrtdose', 'maxchestrtdose_cat', 'potential_chest', 'EUR', 'EAS', 'AFR', 'attained_age', 
+                          'dyslip', 'htn', 't2d', 'racegrp', colnames(sjlife)[grep('^SCORE', colnames(sjlife))])]
+dim(sjlife_trimmed)
+# Complete data
+sjlife_trimmed = sjlife_trimmed[complete.cases(sjlife_trimmed),]
+dim(sjlife_trimmed)
+# Make sure of correct reference level
+sjlife_trimmed$agedx_cat = relevel(as.factor(sjlife_trimmed$agedx_cat), ref = "[-1,5]")
+sjlife_trimmed$agelstcontact_15_cat = relevel(as.factor(sjlife_trimmed$agelstcontact_15_cat), ref = "[-100,15]")
+sjlife_trimmed$anthra_jco_dose_any_cat = relevel(as.factor(sjlife_trimmed$anthra_jco_dose_any_cat), ref = "[-1,0]")
+# sjlife_trimmed$HeartAvg_cat = relevel(as.factor(sjlife_trimmed$HeartAvg_cat), ref = "(-1,200]")
+# sjlife_trimmed$maxchestrtdose_cat = relevel(as.factor(sjlife_trimmed$maxchestrtdose_cat), ref = "(-1,200]")
+sjlife_trimmed$gender[sjlife_trimmed$gender==1] = "Male"
+sjlife_trimmed$gender[sjlife_trimmed$gender==2] = "Female"
+sjlife_trimmed$dyslip = relevel(as.factor(sjlife_trimmed$dyslip), ref = "No")
+sjlife_trimmed$htn = relevel(as.factor(sjlife_trimmed$htn), ref = "No")
+sjlife_trimmed$t2d = relevel(as.factor(sjlife_trimmed$t2d), ref = "No")
+sjlife_trimmed$racegrp[sjlife_trimmed$racegrp!="Black"] = "White_others"
+sjlife_trimmed$racegrp = relevel(as.factor(sjlife_trimmed$racegrp), ref = "White_others")
+sjlife_trimmed$genet_ancestry = ifelse(sjlife_trimmed$AFR>0.6, 'AFR', ifelse(sjlife_trimmed$EUR>0.8, 'EUR', 'others'))
+sjlife_trimmed$genet_ancestry = relevel(as.factor(sjlife_trimmed$genet_ancestry), ref = "EUR")
+
+## CCSS
+ccss = read.delim('CCSS_data_cmp.txt', header = TRUE, sep = "\t")
+# All CCSS survivors
+load('export_12052022.RData')
+ccss_all = export
+ccss_all_race = ccss_all[c('ccssid', 'race_text')]
+ccss_all_race$race_text[ccss_all_race$race_text!="Black"] = "White_others"
+ccss = merge(ccss, ccss_all_race, by='ccssid')
+# ccss$CMP3plus = ccss$CMP2plus
+# Make Grade 2s as controls
+ccss$CMP3plus[is.na(ccss$CMP3plus)] = 0
+ccss$attained_age = ifelse(ccss$CMP3plus==1, ccss$a_maxCHF15, ifelse(ccss$CMP3plus==0, ccss$a_end, NA))
+# Move everyone's age at last contact by 10 years
+ccss$a_end_10 = ccss$a_end - shift
+ccss$a_end_10_cat = cut(ccss$a_end_10, c(-100, 15, 25, 35, 45, 100), include.lowest = TRUE)
+# Survivors who developed CCD between a_end_10 and a_end will have CMP3plus as 1, else 0
+ccss$CMP3plus_15 = ifelse(ccss$CMP3plus==1 & ccss$a_maxCHF15 > ccss$a_end_10 & ccss$a_maxCHF15 < ccss$a_end, 1, 
+                          ifelse(ccss$CMP3plus==0, 0, NA))
+
+# CVRFs should then occur before a_end_10
+ccss$dyslip = ifelse(ccss$maxdyslipidemia15>1, "Yes", "No")
+ccss$dyslip[ccss$maxdyslipidemia15>1 & ccss$a_maxdyslipidemia15>=ccss$a_end_10] = "Unk_baseline"
+ccss$dyslip[is.na(ccss$dyslip)] = 'No'
+ccss$htn = ifelse(ccss$maxhyper15>1, "Yes", "No")
+ccss$htn[ccss$maxhyper15>1 & ccss$a_maxhyper15>=ccss$a_end_10] = "Unk_baseline"
+ccss$htn[is.na(ccss$htn)] = 'No'
+# ccss$obesity[ccss$obesity==1] = "Yes";ccss$obesity[ccss$obesity==2] = "No"; ccss$obesity[ccss$obesity==9] = "Missing"
+# ccss$obesity[ccss$obesity==1 & ccss$a_obesity>=ccss$a_end_10] = "No"
+ccss$t2d = ifelse(ccss$maxdiabetes15>1, "Yes", "No")
+ccss$t2d[ccss$maxdiabetes15>1 & ccss$a_maxdiabetes15>=ccss$a_end_10] = "Unk_baseline"
+ccss_trimmed = ccss[c('ccssid', 'CMP3plus_15', 'a_dx', 'a_dx_cat', 'sex_text', 'a_end', 'a_end_10', 'a_end_10_cat', 'anth_DED', 'anth_DED_cat', 'HeartAvg', 'HeartAvg_cat',
+                      'chestmaxrtdose', 'chestmaxrtdose_cat', 'chestrt_yn', 'CEU', 'ASA', 'YRI', 'attained_age', 
+                      'dyslip', 'htn', 't2d', 'race_text', colnames(ccss)[grep('^SCORE', colnames(ccss))])]
+ccss_trimmed$chestrt_yn[ccss_trimmed$chestrt_yn == 2] = 0
+ccss_trimmed$genet_ancestry = ifelse(ccss_trimmed$YRI>0.6, 'AFR', ifelse(ccss_trimmed$CEU>0.8, 'EUR', 'others'))
+# Exclude overlapping SJLIFE samples from the CCSS
+sjlife_overlap_ccss = read.table('../gwas/pheno/SJLIFE_WGS_samples_overlap_with_CCSS_org_SNP_samples.txt', header = TRUE)
+sjlife_overlap_ccss_gwas = subset(sjlife_overlap_ccss, V1 %in% sjlife_trimmed$sjlid)
+ccss_trimmed = subset(ccss_trimmed, !(ccssid %in% sjlife_overlap_ccss_gwas$ccssid))
+ccss_trimmed = ccss_trimmed[complete.cases(ccss_trimmed),]
+colnames(ccss_trimmed) = colnames(sjlife_trimmed)
+ccss_trimmed$agedx_cat = relevel(as.factor(ccss_trimmed$agedx_cat), ref = "[-1,5]")
+ccss_trimmed$agelstcontact_15_cat = relevel(as.factor(ccss_trimmed$agelstcontact_15_cat), ref = "[-100,15]")
+ccss_trimmed$anthra_jco_dose_any_cat = relevel(as.factor(ccss_trimmed$anthra_jco_dose_any_cat), ref = "[-1,0]")
+# ccss_trimmed$HeartAvg_cat = relevel(as.factor(ccss_trimmed$HeartAvg_cat), ref = "(-1,200]")
+# ccss_trimmed$maxchestrtdose_cat = relevel(as.factor(ccss_trimmed$maxchestrtdose_cat), ref = "(-1,200]")
+ccss_trimmed$dyslip = relevel(as.factor(ccss_trimmed$dyslip), ref = "No")
+ccss_trimmed$htn = relevel(as.factor(ccss_trimmed$htn), ref = "No")
+ccss_trimmed$t2d = relevel(as.factor(ccss_trimmed$t2d), ref = "No")
+ccss_trimmed$racegrp = relevel(as.factor(ccss_trimmed$racegrp), ref = "White_others")
+ccss_trimmed$genet_ancestry = relevel(as.factor(ccss_trimmed$genet_ancestry), ref = "EUR")
+
+## IGHG's risk groups (Ehrhardt et al. Lancet Oncol 2023)
+# SJLIFE
+sjlife_trimmed$risk_groups = NA
+sjlife_trimmed$risk_groups[sjlife_trimmed$anthra_jco_dose_any>=250 | sjlife_trimmed$HeartAvg>=3000 | 
+                             (sjlife_trimmed$anthra_jco_dose_any>=100 & sjlife_trimmed$HeartAvg>=1500)] = "high_risk"
+sjlife_trimmed$risk_groups[(sjlife_trimmed$anthra_jco_dose_any>100 & sjlife_trimmed$anthra_jco_dose_any<250 & is.na(sjlife_trimmed$risk_groups)) | 
+                              (sjlife_trimmed$HeartAvg>1500 & sjlife_trimmed$HeartAvg<3000 & is.na(sjlife_trimmed$risk_groups))] = "moderate_risk"
+sjlife_trimmed$risk_groups[(sjlife_trimmed$anthra_jco_dose_any>0 & sjlife_trimmed$anthra_jco_dose_any<=100 & is.na(sjlife_trimmed$risk_groups)) | 
+                             (sjlife_trimmed$HeartAvg>200 & sjlife_trimmed$HeartAvg<=1500 & is.na(sjlife_trimmed$risk_groups))] = "low_risk"
+# CCSS
+ccss_trimmed$risk_groups = NA
+ccss_trimmed$risk_groups[ccss_trimmed$anthra_jco_dose_any>=250 | ccss_trimmed$HeartAvg>=3000 |
+                           (ccss_trimmed$anthra_jco_dose_any>=100 & ccss_trimmed$HeartAvg>=1500)] = "high_risk"
+ccss_trimmed$risk_groups[(ccss_trimmed$anthra_jco_dose_any>100 & ccss_trimmed$anthra_jco_dose_any<250 & is.na(ccss_trimmed$risk_groups)) | 
+                             (ccss_trimmed$HeartAvg>1500 & ccss_trimmed$HeartAvg<3000 & is.na(ccss_trimmed$risk_groups))] = "moderate_risk"
+ccss_trimmed$risk_groups[(ccss_trimmed$anthra_jco_dose_any>0 & ccss_trimmed$anthra_jco_dose_any<=100 & is.na(ccss_trimmed$risk_groups)) | 
+                             (ccss_trimmed$HeartAvg>200 & ccss_trimmed$HeartAvg<=1500 & is.na(ccss_trimmed$risk_groups))] = "low_risk"
+## Model building
+library(pROC)
+# Exclude survivors if agelstcontact_15 is less than agedx
+foo = subset(sjlife_trimmed, agelstcontact_15>agedx)
+
+#### Model 1
+# Demographics and cancer treatments alone as predictors
+clinical = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat, data=foo, family=binomial)
+summary(clinical)
+# Make prediction while removing effect of attained age
+newdata = subset(sjlife_trimmed, agelstcontact_15>agedx)
+newdata$agelstcontact_15_cat = "[-100,15]"
+# AUC calculations based on IGHG's risk groups (Ehrhardt et al. Lancet Oncol 2023)
+newdata = subset(newdata, risk_groups=="moderate_risk")
+# newdata = subset(newdata, anthra_jco_dose_any>0 | HeartAvg>200)
+# newdata = subset(newdata, genet_ancestry=="EUR")
+pred_clinical = predict(clinical, newdata=newdata)
+roc_clinical = roc(newdata$CMP3plus_15, pred_clinical)
+round(ci.auc(roc_clinical),2)
+
+#### Model 2
+# Clinical model plus attained age
+clinical_age = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat, data=foo, family=binomial)
+summary(clinical_age)
+# Make prediction
+newdata = subset(sjlife_trimmed, agelstcontact_15>agedx)
+# AUC calculations based on IGHG's risk groups (Ehrhardt et al. Lancet Oncol 2023)
+newdata = subset(newdata, risk_groups=="moderate_risk")
+# newdata = subset(newdata, anthra_jco_dose_any>0 | HeartAvg>200)
+# newdata = subset(newdata, genet_ancestry=="EUR")
+pred_clinical_age = predict(clinical_age, newdata=newdata)
+roc_clinical_age = roc(newdata$CMP3plus_15, pred_clinical_age)
+roc.test(roc_clinical_age, roc_clinical)
+round(ci.auc(roc_clinical_age),2)
+
+#### Model 3
+# Clinical model plus attained age plus CVRFs
+clinical_age_cvrf = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat+dyslip+htn+t2d, data=foo, family=binomial)
+summary(clinical_age_cvrf)
+# Change coefficients of "Unk_baseline" to 1/2 of coefficients of "Yes" for htn, t2d and dyslipidemia
+clinical_age_cvrf$coefficients[17] = clinical_age_cvrf$coefficients[18]*0.5
+clinical_age_cvrf$coefficients[19] = clinical_age_cvrf$coefficients[20]*0.5
+clinical_age_cvrf$coefficients[21] = clinical_age_cvrf$coefficients[22]*0.5
+# Make prediction
+pred_clinical_age_cvrf = predict(clinical_age_cvrf, newdata=newdata)
+roc_clinical_age_cvrf = roc(newdata$CMP3plus_15, pred_clinical_age_cvrf)
+roc.test(roc_clinical_age_cvrf, roc_clinical_age)
+round(ci.auc(roc_clinical_age_cvrf),2)
+
+#### Model 4
+# Clinical model plus attained age plus CVRFs plus genetic ancestry
+clinical_age_cvrf_ancestry = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat+dyslip+htn+t2d+genet_ancestry, data=foo, family=binomial)
+summary(clinical_age_cvrf_ancestry)
+# Change coefficients of "Unk_baseline" to 1/2 of coefficients of "Yes" for htn, t2d and dyslipidemia
+clinical_age_cvrf_ancestry$coefficients[17] = clinical_age_cvrf_ancestry$coefficients[18]*0.5
+clinical_age_cvrf_ancestry$coefficients[19] = clinical_age_cvrf_ancestry$coefficients[20]*0.5
+clinical_age_cvrf_ancestry$coefficients[21] = clinical_age_cvrf_ancestry$coefficients[22]*0.5
+# Make prediction
+pred_clinical_age_cvrf_ancestry = predict(clinical_age_cvrf_ancestry, newdata=newdata)
+roc_clinical_age_cvrf_ancestry = roc(newdata$CMP3plus_15, pred_clinical_age_cvrf_ancestry)
+roc.test(roc_clinical_age_cvrf_ancestry, roc_clinical_age_cvrf)
+round(ci.auc(roc_clinical_age_cvrf_ancestry),2)
+
+#### Model 5
+# Clinical model plus attained age plus CVRFs plus genetic ancestry plus PRS
+clinical_age_cvrf_ancestry_prs = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat+dyslip+htn+t2d+genet_ancestry+
+                                       SCORE_DCM_tadros+SCORE_HCM_tadros+SCORE_LVESVi, data=foo, family=binomial)
+summary(clinical_age_cvrf_ancestry_prs)
+# Change coefficients of "Unk_baseline" to 1/2 of coefficients of "Yes" for htn, t2d and dyslipidemia
+clinical_age_cvrf_ancestry_prs$coefficients[17] = clinical_age_cvrf_ancestry_prs$coefficients[18]*0.5
+clinical_age_cvrf_ancestry_prs$coefficients[19] = clinical_age_cvrf_ancestry_prs$coefficients[20]*0.5
+clinical_age_cvrf_ancestry_prs$coefficients[21] = clinical_age_cvrf_ancestry_prs$coefficients[22]*0.5
+# Make prediction
+pred_clinical_age_cvrf_ancestry_prs = predict(clinical_age_cvrf_ancestry_prs, newdata=newdata)
+roc_clinical_age_cvrf_ancestry_prs = roc(newdata$CMP3plus_15, pred_clinical_age_cvrf_ancestry_prs)
+roc.test(roc_clinical_age_cvrf_ancestry_prs, roc_clinical_age_cvrf_ancestry)
+round(ci.auc(roc_clinical_age_cvrf_ancestry_prs),2)
+
+#### Model 6
+# Clinical model plus attained age plus CVRFs plus race
+clinical_age_cvrf_race = glm(CMP3plus_15~agedx_cat+gender+HeartAvg_cat+anthra_jco_dose_any_cat+agelstcontact_15_cat+dyslip+htn+t2d+racegrp, data=foo, family=binomial)
+summary(clinical_age_cvrf_race)
+# Change coefficients of "Unk_baseline" to 1/2 of coefficients of "Yes" for htn, t2d and dyslipidemia
+clinical_age_cvrf_race$coefficients[17] = clinical_age_cvrf_race$coefficients[18]*0.5
+clinical_age_cvrf_race$coefficients[19] = clinical_age_cvrf_race$coefficients[20]*0.5
+clinical_age_cvrf_race$coefficients[21] = clinical_age_cvrf_race$coefficients[22]*0.5
+# Make prediction
+pred_clinical_age_cvrf_race = predict(clinical_age_cvrf_race, newdata=newdata)
+roc_clinical_age_cvrf_race = roc(newdata$CMP3plus_15, pred_clinical_age_cvrf_race)
+roc.test(roc_clinical_age_cvrf_race, roc_clinical_age_cvrf)
+round(ci.auc(roc_clinical_age_cvrf_race),2)
+
+#######################################
+##### Validation in CCSS ##############
+newdata_ccss = subset(ccss_trimmed, agelstcontact_15>agedx)
+
+# Model 1 (remove effect of age)
+newdata_ccss$agelstcontact_15_cat = "[-100,15]"
+# AUC calculations based on IGHG's risk groups (Ehrhardt et al. Lancet Oncol 2023)
+# newdata_ccss = subset(newdata_ccss, risk_groups=="low_risk")
+# newdata_ccss = subset(newdata_ccss, anthra_jco_dose_any>0 | HeartAvg>200)
+# newdata_ccss = subset(newdata_ccss, genet_ancestry=="EUR")
+pred_clinical_ccss = predict(clinical, newdata = newdata_ccss)
+roc_clinical_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_ccss)
+roc_clinical_ccss
+round(ci.auc(roc_clinical_ccss),2)
+
+# Model 2
+newdata_ccss = subset(ccss_trimmed, agelstcontact_15>agedx)
+# AUC calculations based on IGHG's risk groups (Ehrhardt et al. Lancet Oncol 2023)
+# newdata_ccss = subset(newdata_ccss, risk_groups=="low_risk")
+# newdata_ccss = subset(newdata_ccss, anthra_jco_dose_any>0 | HeartAvg>200)
+# newdata_ccss = subset(newdata_ccss, genet_ancestry=="EUR")
+pred_clinical_age_ccss = predict(clinical_age, newdata = newdata_ccss)
+roc_clinical_age_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_age_ccss)
+roc.test(roc_clinical_age_ccss, roc_clinical_ccss)
+round(ci.auc(roc_clinical_age_ccss),2)
+
+# Model 3
+pred_clinical_age_cvrf_ccss = predict(clinical_age_cvrf, newdata = newdata_ccss)
+roc_clinical_age_cvrf_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_age_cvrf_ccss)
+roc.test(roc_clinical_age_cvrf_ccss, roc_clinical_age_ccss)
+round(ci.auc(roc_clinical_age_cvrf_ccss),2)
+
+# Model 4
+pred_clinical_age_cvrf_ancestry_ccss = predict(clinical_age_cvrf_ancestry, newdata = newdata_ccss)
+roc_clinical_age_cvrf_ancestry_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_age_cvrf_ancestry_ccss)
+roc.test(roc_clinical_age_cvrf_ancestry_ccss, roc_clinical_age_cvrf_ccss)
+round(ci.auc(roc_clinical_age_cvrf_ancestry_ccss),2)
+
+# Model 5
+pred_clinical_age_cvrf_ancestry_prs_ccss = predict(clinical_age_cvrf_ancestry_prs, newdata = newdata_ccss)
+roc_clinical_age_cvrf_ancestry_prs_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_age_cvrf_ancestry_prs_ccss)
+roc.test(roc_clinical_age_cvrf_ancestry_prs_ccss, roc_clinical_age_cvrf_ancestry_ccss)
+round(ci.auc(roc_clinical_age_cvrf_ancestry_prs_ccss),2)
+
+# Model 6
+pred_clinical_age_cvrf_race_ccss = predict(clinical_age_cvrf_race, newdata = newdata_ccss)
+roc_clinical_age_cvrf_race_ccss = roc(newdata_ccss$CMP3plus_15, pred_clinical_age_cvrf_race_ccss)
+roc.test(roc_clinical_age_cvrf_race_ccss, roc_clinical_age_cvrf_ccss)
+round(ci.auc(roc_clinical_age_cvrf_race_ccss),2)
+
+#######################################
+##### Validation in ALL CCSS survivors regardless of the genetic data
+ccss_all$race_text[ccss_all$race_text!="Black"] = "White_others"
+# format the phenotype
+ccss_all$SEX = ccss_all$SEX - 1
+ccss_all$CMP2plus = ifelse(ccss_all$maxCHF15>1, 1, ifelse(ccss_all$maxCHF15==0, 0, NA))
+ccss_all$CMP3plus = ifelse(ccss_all$maxCHF15>2, 1, ifelse(ccss_all$maxCHF15==0, 0, NA))
+# Harmonize rt dose variables based on yn variable
+ccss_all$chestmaxrtdose[ccss_all$chestrt_yn==0 & is.na(ccss_all$chestmaxrtdose)] = 0
+ccss_all$HeartAvg[ccss_all$chestrt_yn==2 & is.na(ccss_all$HeartAvg)] = 0
+ccss_all$HeartAvg = ccss_all$HeartAvg * 100 # Change it to cGy to be consistent with SJLIFE HeartAvg variable
+ccss_all$a_dx_cat = cut(ccss_all$a_dx, c(-1, 5, 10, 15, 100), include.lowest = TRUE)
+ccss_all$a_end_cat = cut(ccss_all$a_end, c(5, 25, 35, 45, 55, 100), include.lowest = TRUE)
+ccss_all$anth_DED_cat = cut(ccss_all$anth_DED, c(-1, 0, 100, 250, 100000), include.lowest = TRUE)
+ccss_all$HeartAvg_cat = cut(ccss_all$HeartAvg, c(-1, 200, 500, 1500, 3500, 100000))
+ccss_all$chestmaxrtdose_cat = cut(ccss_all$chestmaxrtdose, c(-1, 200, 500, 1500, 3500, 100000))
+# Make Grade 2s as controls
+ccss_all$CMP3plus[is.na(ccss_all$CMP3plus)] = 0
+ccss_all$attained_age = ifelse(ccss_all$CMP3plus==1, ccss_all$a_maxCHF15, ifelse(ccss_all$CMP3plus==0, ccss_all$a_end, NA))
+# Move everyone's age at last contact by 10 years
+ccss_all$a_end_10 = ccss_all$a_end - shift
+ccss_all$a_end_10_cat = cut(ccss_all$a_end_10, c(-100, 15, 25, 35, 45, 100), include.lowest = TRUE)
+# Survivors who developed CCD between a_end_10 and a_end will have CMP3plus as 1, else 0
+ccss_all$CMP3plus_15 = ifelse(ccss_all$CMP3plus==1 & ccss_all$a_maxCHF15 > ccss_all$a_end_10 & ccss_all$a_maxCHF15 < ccss_all$a_end, 1, 
+                          ifelse(ccss_all$CMP3plus==0, 0, NA))
+# CVRFs should then occur before a_end_10
+ccss_all$dyslip = ifelse(ccss_all$maxdyslipidemia15>1, "Yes", "No")
+ccss_all$dyslip[ccss_all$maxdyslipidemia15>1 & ccss_all$a_maxdyslipidemia15>=ccss_all$a_end_10] = "Unk_baseline"
+ccss_all$dyslip[is.na(ccss_all$dyslip)] = 'No'
+ccss_all$htn = ifelse(ccss_all$maxhyper15>1, "Yes", "No")
+ccss_all$htn[ccss_all$maxhyper15>1 & ccss_all$a_maxhyper15>=ccss_all$a_end_10] = "Unk_baseline"
+ccss_all$htn[is.na(ccss_all$htn)] = 'No'
+ccss_all$t2d = ifelse(ccss_all$maxdiabetes15>1, "Yes", "No")
+ccss_all$t2d[ccss_all$maxdiabetes15>1 & ccss_all$a_maxdiabetes15>=ccss_all$a_end_10] = "Unk_baseline"
+ccss_all_trimmed = ccss_all[c('ccssid', 'CMP3plus_15', 'a_dx', 'a_dx_cat', 'sex_text', 'a_end', 'a_end_10', 'a_end_10_cat', 'anth_DED', 'anth_DED_cat', 'HeartAvg', 'HeartAvg_cat',
+                      'chestmaxrtdose', 'chestmaxrtdose_cat', 'chestrt_yn', 'attained_age', 'dyslip', 'htn', 't2d', 'race_text')]
+ccss_all_trimmed$chestrt_yn[ccss_all_trimmed$chestrt_yn == 2] = 0
+# Exclude overlapping SJLIFE samples from the CCSS
+sjlife_overlap_ccss = read.table('../gwas/pheno/SJLIFE_WGS_samples_overlap_with_CCSS_org_SNP_samples.txt', header = TRUE)
+sjlife_overlap_ccss_gwas = subset(sjlife_overlap_ccss, V1 %in% sjlife_trimmed$sjlid)
+ccss_all_trimmed = subset(ccss_all_trimmed, !(ccssid %in% sjlife_overlap_ccss_gwas$ccssid))
+ccss_all_trimmed = ccss_all_trimmed[complete.cases(ccss_all_trimmed),]
+colnames(ccss_all_trimmed) = colnames(sjlife_trimmed)[c(1:15,19:23)]
+ccss_all_trimmed$agedx_cat = relevel(as.factor(ccss_all_trimmed$agedx_cat), ref = "[-1,5]")
+ccss_all_trimmed$agelstcontact_15_cat = relevel(as.factor(ccss_all_trimmed$agelstcontact_15_cat), ref = "[-100,15]")
+ccss_all_trimmed$anthra_jco_dose_any_cat = relevel(as.factor(ccss_all_trimmed$anthra_jco_dose_any_cat), ref = "[-1,0]")
+# ccss_all_trimmed$HeartAvg_cat = relevel(as.factor(ccss_all_trimmed$HeartAvg_cat), ref = "(-1,200]")
+# ccss_all_trimmed$maxchestrtdose_cat = relevel(as.factor(ccss_all_trimmed$maxchestrtdose_cat), ref = "(-1,200]")
+ccss_all_trimmed$dyslip = relevel(as.factor(ccss_all_trimmed$dyslip), ref = "No")
+ccss_all_trimmed$htn = relevel(as.factor(ccss_all_trimmed$htn), ref = "No")
+ccss_all_trimmed$t2d = relevel(as.factor(ccss_all_trimmed$t2d), ref = "No")
+ccss_all_trimmed$racegrp = relevel(as.factor(ccss_all_trimmed$racegrp), ref = "White_others")
+
+# Make predictions
+newdata_ccss_all = subset(ccss_all_trimmed, agelstcontact_15>agedx)
+
+# Model 1 (remove effect of age)
+newdata_ccss_all$agelstcontact_15_cat = "[-100,15]"
+pred_clinical_ccss_all = predict(clinical, newdata = newdata_ccss_all)
+roc_clinical_ccss_all = roc(newdata_ccss_all$CMP3plus_15, pred_clinical_ccss_all)
+roc_clinical_ccss_all
+round(ci.auc(roc_clinical_ccss_all),2)
+
+# Model 2
+newdata_ccss_all = subset(ccss_all_trimmed, agelstcontact_15>agedx)
+pred_clinical_age_ccss_all = predict(clinical_age, newdata = newdata_ccss_all)
+roc_clinical_age_ccss_all = roc(newdata_ccss_all$CMP3plus_15, pred_clinical_age_ccss_all)
+roc.test(roc_clinical_age_ccss_all, roc_clinical_ccss_all)
+round(ci.auc(roc_clinical_age_ccss_all),2)
+
+# Model 3
+pred_clinical_age_cvrf_ccss_all = predict(clinical_age_cvrf, newdata = newdata_ccss_all)
+roc_clinical_age_cvrf_ccss_all = roc(newdata_ccss_all$CMP3plus_15, pred_clinical_age_cvrf_ccss_all)
+roc.test(roc_clinical_age_cvrf_ccss_all, roc_clinical_age_ccss_all)
+round(ci.auc(roc_clinical_age_cvrf_ccss_all),2)
+
+# Model 6
+pred_clinical_age_cvrf_race_ccss_all = predict(clinical_age_cvrf_race, newdata = newdata_ccss_all)
+roc_clinical_age_cvrf_race_ccss_all = roc(newdata_ccss_all$CMP3plus_15, pred_clinical_age_cvrf_race_ccss_all)
+roc.test(roc_clinical_age_cvrf_race_ccss_all, roc_clinical_age_cvrf_ccss_all)
+round(ci.auc(roc_clinical_age_cvrf_race_ccss_all),2)
+
+# save(sjlife_trimmed, ccss_trimmed, file='final_data_sjlife_ccss.Rdata')
