@@ -9,7 +9,7 @@ NSIM <- 1000
 param_grid <- expand.grid(n = seq(5, 200, 5),
                           a2 = c(-2, 0, 2))
 
-for(ii in 1:nrow(param_grid)){
+for(ii in 83:nrow(param_grid)){
   
   n <- param_grid[ii, "n"]
   a2 <- param_grid[ii, "a2"]
@@ -19,7 +19,7 @@ for(ii in 1:nrow(param_grid)){
   yy <- xx + a2 * xx ^ 2
   
   beta0 <- lm(yy ~ xx)$coefficients[2]
-  sim_res <- replicate(NSIM, {
+  sim_res <- mclapply(1:NSIM, function(jj) {
     ## generate the data of two samples
     ## x denote the design matrix
     x <- seq(0, 3, length.out = n)
@@ -80,7 +80,7 @@ for (j in 1:2) {
       rci_len = as.numeric(rci[2] - rci[1]),
       brci_cover = as.numeric(brci[1] < beta0 & brci[2] > beta0),
       brci_len = as.numeric(brci[2] - brci[1]))
-  }) 
+  }, mc.cores = 5) %>% bind_rows()
   
   saveRDS(sim_res,
           file = sprintf("./bayes_fixed_design_results/n_%s_a2_%s.rds", n, a2))
